@@ -78,7 +78,6 @@ class LoanConfig(LoanBase):
     }
 
 
-# check how it works later
 class LoanWithBookUser(LoanConfig):
     user: UserConfig
     book: BookConfig

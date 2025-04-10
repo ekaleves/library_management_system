@@ -10,6 +10,7 @@ from app.crud import authenticate_user
 from datetime import timedelta
 from app.dependencies import get_current_user
 from app.models import User
+from app.schemas import LoanWithBookUser
 
 router = APIRouter()
 
@@ -132,6 +133,47 @@ def return_book(
     return crud.return_loan(db, loan_id, return_data)
 
 
+@router.get("/loans/me", response_model=List[LoanWithBookUser])
+def get_my_loans(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    return crud.get_loans_by_user(db, current_user.user_id)
+
+
+@router.get("/loans/overdue", response_model=List[LoanWithBookUser])
+def get_overdue_loans(
+        db: Session = Depends(get_db),
+        current_user: User = Depends(get_current_user)
+):
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Administrator users only.")
+
+    return crud.get_overdue_loans(db)
+
+
+@router.get("/notifications/due-soon", response_model=List[LoanWithBookUser])
+def get_due_soon_loans(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Administrator users only.")
+
+    return crud.get_loans_due_soon(db)
+
+
+@router.get("/loans/history", response_model=List[LoanWithBookUser])
+def get_loan_history(
+    user_id: Optional[int] = None,
+    returned: Optional[bool] = None,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admins only.")
+
+    return crud.get_loan_history(db, user_id, returned)
 
 
 

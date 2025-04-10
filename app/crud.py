@@ -132,6 +132,62 @@ def return_loan(db: Session, loan_id: int, return_data: schemas.LoanReturn):
     return loan
 
 
+def get_loans_by_user(db: Session, user_id: int):
+    return (
+        db.query(models.Loan)
+        .filter(models.Loan.user_id == user_id)
+        .order_by(models.Loan.loan_due_date.desc())
+        .all()
+    )
+
+
+def get_overdue_loans(db: Session):
+    return (
+        db.query(models.Loan)
+        .filter(
+            models.Loan.return_date.is_(None),  # not returned
+            models.Loan.loan_due_date < date.today()  # past due
+        )
+        .order_by(models.Loan.loan_due_date.asc())
+        .all()
+    )
+
+
+def get_loans_due_soon(db: Session, days_ahead: int = 3):
+    from datetime import date, timedelta
+
+    today = date.today()
+    upcoming = today + timedelta(days=days_ahead)
+
+    return (
+        db.query(models.Loan)
+        .filter(
+            models.Loan.return_date.is_(None),
+            models.Loan.loan_due_date <= upcoming,
+            models.Loan.loan_due_date >= today
+        )
+        .order_by(models.Loan.loan_due_date.asc())
+        .all()
+    )
+
+
+def get_loan_history(
+    db: Session,
+    user_id: Optional[int] = None,
+    returned: Optional[bool] = None
+):
+    query = db.query(models.Loan)
+
+    if user_id is not None:
+        query = query.filter(models.Loan.user_id == user_id)
+
+    if returned is not None:
+        if returned:
+            query = query.filter(models.Loan.return_date.isnot(None))
+        else:
+            query = query.filter(models.Loan.return_date.is_(None))
+
+    return query.order_by(models.Loan.loan_due_date.desc()).all()
 
 
 
