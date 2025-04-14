@@ -16,3 +16,5 @@ __pycache__/
 
 
 .python-version
+
+requirements.broken.txt

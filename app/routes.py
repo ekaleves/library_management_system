@@ -1,16 +1,17 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, HTTPException
 from sqlalchemy.orm import Session
 from app import schemas, crud, models
-from fastapi import HTTPException
-from typing import List
+from typing import List, Optional
 from app.database import get_db
 from fastapi.security import OAuth2PasswordRequestForm
 from app.auth import create_access_token
-from app.crud import authenticate_user
+from app.crud import authenticate_user, generate_user_loans_csv, generate_user_loans_pdf
 from datetime import timedelta
 from app.dependencies import get_current_user
 from app.models import User
 from app.schemas import LoanWithBookUser
+from fastapi.responses import StreamingResponse
+
 
 router = APIRouter()
 
@@ -176,14 +177,40 @@ def get_loan_history(
     return crud.get_loan_history(db, user_id, returned)
 
 
+@router.get("/loans/me/export")
+def export_loans_csv(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    csv_data = generate_user_loans_csv(db, current_user.user_id)
+
+    return StreamingResponse(
+        iter([csv_data]),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=loan_history.csv"}
+    )
 
 
+@router.get("/loans/me/export/pdf")
+def export_loans_pdf(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    pdf_bytes = generate_user_loans_pdf(db, current_user.user_id)
+
+    return StreamingResponse(
+        iter([pdf_bytes]),
+        media_type="application/pdf",
+        headers={"Content-Disposition": "attachment; filename=loan_history.pdf"}
+    )
 
 
+@router.get("/admin/stats")
+def get_dashboard_stats(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Only administrators can view dashboard stats.")
 
-
-
-
-
-
-
+    return crud.get_admin_dashboard_stats(db)

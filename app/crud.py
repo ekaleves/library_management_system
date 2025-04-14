@@ -1,10 +1,16 @@
 from sqlalchemy.orm import Session
+from sqlalchemy import func
 from app import models, schemas
 from app.models import User
 from app.security import hash_password, verify_password
 from datetime import datetime, timedelta, date
 from fastapi import HTTPException
 from decimal import Decimal
+from typing import Optional
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+import csv
+import io
 
 
 def create_book(db: Session, book_data: schemas.BookCreate):
@@ -120,7 +126,7 @@ def return_loan(db: Session, loan_id: int, return_data: schemas.LoanReturn):
     # Late return?
     if return_date > loan.loan_due_date:
         days_late = (return_date - loan.loan_due_date).days
-        loan.loan_fine = Decimal(days_late) * Decimal("1.50")  # example: $1.50 per day
+        loan.loan_fine = Decimal(days_late) * Decimal("1.50")
 
     # Update book inventory
     book = db.query(models.Book).filter(models.Book.book_id == loan.book_id).first()
@@ -189,5 +195,82 @@ def get_loan_history(
 
     return query.order_by(models.Loan.loan_due_date.desc()).all()
 
+
+def generate_user_loans_csv(db: Session, user_id: int) -> str:
+    loans = (
+        db.query(models.Loan)
+        .filter(models.Loan.user_id == user_id)
+        .all()
+    )
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+
+    # Header
+    writer.writerow(["Loan ID", "Book Title", "Due Date", "Return Date", "Fine"])
+
+    # Rows
+    for loan in loans:
+        writer.writerow([
+            loan.loan_id,
+            loan.book.book_name,
+            loan.loan_due_date,
+            loan.return_date or "",
+            str(loan.loan_fine or "0.00")
+        ])
+
+    return output.getvalue()
+
+
+def generate_user_loans_pdf(db: Session, user_id: int) -> bytes:
+    loans = (
+        db.query(models.Loan)
+        .filter(models.Loan.user_id == user_id)
+        .all()
+    )
+
+    buffer = io.BytesIO()
+    pdf = canvas.Canvas(buffer, pagesize=letter)
+    width, height = letter
+
+    y = height - 40
+    pdf.setFont("Helvetica-Bold", 14)
+    pdf.drawString(40, y, "Loan History")
+    y -= 30
+
+    pdf.setFont("Helvetica", 10)
+    for loan in loans:
+        book_name = loan.book.book_name
+        due = str(loan.loan_due_date)
+        returned = str(loan.return_date) if loan.return_date else "-"
+        fine = str(loan.loan_fine or "0.00")
+        line = f"{loan.loan_id}: {book_name} | Due: {due} | Returned: {returned} | Fine: ${fine}"
+        pdf.drawString(40, y, line)
+        y -= 18
+        if y < 50:
+            pdf.showPage()
+            y = height - 40
+            pdf.setFont("Helvetica", 10)
+
+    pdf.save()
+    buffer.seek(0)
+    return buffer.read()
+
+
+def get_admin_dashboard_stats(db: Session):
+    total_users = db.query(func.count(models.User.user_id)).scalar()
+    total_books = db.query(func.count(models.Book.book_id)).scalar()
+    active_loans = db.query(func.count(models.Loan.loan_id)).filter(models.Loan.return_date == None).scalar()
+    overdue_loans = db.query(func.count(models.Loan.loan_id)).filter(
+        models.Loan.return_date == None,
+        models.Loan.loan_due_date < date.today()
+    ).scalar()
+
+    return {
+        "total_users": total_users,
+        "total_books": total_books,
+        "active_loans": active_loans,
+        "overdue_loans": overdue_loans
+    }
 
 
